@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findAddresses, ScraperError } from '@/lib/councilScraper';
-
-// The council site's multi-step session flow can take 15-30s; Vercel's
-// default function timeout (10s on Hobby) is too short for that.
-export const maxDuration = 60;
+import { findAddressesForPostcode } from '@/lib/addressDirectory';
 
 export async function POST(req: NextRequest) {
   let postcode: unknown;
@@ -17,14 +13,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Please provide a valid UK postcode' }, { status: 400 });
   }
 
-  try {
-    const addresses = await findAddresses(postcode.trim());
-    return NextResponse.json({ addresses });
-  } catch (err) {
-    if (err instanceof ScraperError) {
-      return NextResponse.json({ error: err.message }, { status: 502 });
-    }
-    console.error('addresses lookup failed', err);
-    return NextResponse.json({ error: 'Unexpected error looking up that postcode' }, { status: 500 });
+  const addresses = await findAddressesForPostcode(postcode.trim());
+  if (addresses.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "No addresses have been loaded for that postcode yet. The council's site blocks lookups from this server, so a new postcode needs to be added by running the refresh script from a home network — see scripts/refresh-schedule.ts.",
+      },
+      { status: 404 },
+    );
   }
+
+  return NextResponse.json({ addresses: addresses.map(({ pIndex, label }) => ({ pIndex, label })) });
 }
