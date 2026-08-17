@@ -11,13 +11,45 @@
 // Requires BLOB_READ_WRITE_TOKEN in .env.local (from the Vercel dashboard's
 // Storage tab) so results are written to the same Blob store the deployed
 // app reads from. Without it, results only land in the local .data/ cache.
+//
+// BN6 postcodes are checked against scripts/hassocks-postcodes.json (a
+// best-effort reference list of the ~272 postcodes in Hassocks/Clayton
+// parish, out of ~622 total in BN6 — the rest are Ditchling, Hurstpierpoint,
+// Albourne, etc.) and flagged with a warning if not found — this is a
+// same-outward-code area, not a hard boundary check, so it only warns.
+// This is intentionally demand-driven: addresses are added one at a time
+// as neighbours actually ask, not preloaded in bulk, since fully scraping
+// the whole area would mean many hours of sustained requests against a
+// small council server that's already shown it watches for bot traffic.
 
 import { readFile } from 'fs/promises';
 import { findAddresses, fetchSchedule, type AddressOption } from '../lib/councilScraper';
 import { writeCachedSchedule, type StoredSchedule } from '../lib/scheduleStore';
 import { upsertAddress } from '../lib/addressDirectory';
+import hassocksPostcodes from './hassocks-postcodes.json' with { type: 'json' };
 
 type Result = { ok: true; label: string; nextDate?: string } | { ok: false; reason: string };
+
+const HASSOCKS_SET = new Set(hassocksPostcodes.map(normalizePostcode));
+
+function normalizePostcode(postcode: string): string {
+  return postcode.trim().toUpperCase().replace(/\s+/g, '');
+}
+
+/**
+ * Best-effort check against a reference list of Hassocks/Clayton postcodes
+ * (see scripts/hassocks-postcodes.json). Not exhaustive — new addresses get
+ * postcodes, and outward-code area boundaries occasionally shift — so this
+ * only ever warns, never blocks, a lookup.
+ */
+function warnIfOutsideKnownArea(postcode: string) {
+  if (!postcode.toUpperCase().startsWith('BN6')) return; // not our reference area at all
+  if (!HASSOCKS_SET.has(normalizePostcode(postcode))) {
+    console.warn(
+      `  note: ${postcode} isn't in the Hassocks/Clayton reference list — double-check it before spending a scrape on it (could be a neighbouring village that shares the BN6 prefix, or just a newer postcode not in the list).`,
+    );
+  }
+}
 
 function matchAddress(addresses: AddressOption[], fragment: string): AddressOption[] | AddressOption {
   const frag = fragment.toLowerCase();
@@ -73,6 +105,7 @@ async function runBatch(filePath: string) {
       failed.push(`"${line}" — expected format: postcode | address fragment`);
       continue;
     }
+    warnIfOutsideKnownArea(postcode);
     process.stdout.write(`${postcode} | ${fragment} ... `);
     try {
       const result = await refreshOne(postcode, fragment);
@@ -123,6 +156,7 @@ async function main() {
     process.exit(1);
   }
 
+  warnIfOutsideKnownArea(postcode);
   console.log(`Looking up addresses for ${postcode}...`);
   const addresses = await findAddresses(postcode);
 
