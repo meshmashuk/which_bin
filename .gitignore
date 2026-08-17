@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local dev cache (schedule data, used when Vercel Blob isn't configured)
+.data/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
