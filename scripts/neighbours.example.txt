@@ -1,0 +1,10 @@
+# One address per line: postcode | address fragment (enough to uniquely match)
+# Lines starting with # are ignored.
+#
+# Copy this file to scripts/neighbours.txt (gitignored) and fill in real
+# addresses, then run:
+#   npm run refresh -- --batch scripts/neighbours.txt
+
+RH16 4AR | 2, Cape Road
+RH16 4AR | 4, Cape Road
+RH17 6DN | 10, High Street
