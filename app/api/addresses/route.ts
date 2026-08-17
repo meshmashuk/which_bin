@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { findAddresses, ScraperError } from '@/lib/councilScraper';
 
+// The council site's multi-step session flow can take 15-30s; Vercel's
+// default function timeout (10s on Hobby) is too short for that.
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   let postcode: unknown;
   try {

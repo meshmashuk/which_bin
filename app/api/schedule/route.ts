@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchSchedule, ScraperError } from '@/lib/councilScraper';
 import { readCachedSchedule, writeCachedSchedule, type StoredSchedule } from '@/lib/scheduleStore';
 
+export const maxDuration = 60;
+
 export async function GET(req: NextRequest) {
   const postcode = req.nextUrl.searchParams.get('postcode')?.trim();
   const pIndex = req.nextUrl.searchParams.get('pIndex')?.trim();

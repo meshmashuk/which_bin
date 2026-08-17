@@ -1,7 +1,16 @@
 import * as cheerio from 'cheerio';
 
 const BASE = 'https://waste.services.midsussex.gov.uk';
-const UA = 'Mozilla/5.0 (compatible; WhichBinApp/1.0; +personal-use-bin-calendar)';
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const BROWSER_HEADERS = {
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-GB,en;q=0.9',
+  'Upgrade-Insecure-Requests': '1',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'same-origin',
+};
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export class ScraperError extends Error {}
@@ -45,6 +54,40 @@ function cookieHeader(jar: CookieJar): string {
     .join('; ');
 }
 
+/**
+ * Builds a diagnostic string from a failed response so we can tell a real page-layout
+ * change apart from a WAF/bot-protection block (e.g. Akamai/Cloudflare/Imperva), which
+ * typically shows up as a 403 with a distinctive header set or block-page body.
+ */
+async function describeFailure(res: Response): Promise<string> {
+  const headersOfInterest = [
+    'server',
+    'via',
+    'cf-ray',
+    'cf-mitigated',
+    'x-akamai-transformed',
+    'x-iinfo',
+    'x-cdn',
+    'x-cache',
+  ];
+  const headerParts: string[] = [];
+  for (const h of headersOfInterest) {
+    const v = res.headers.get(h);
+    if (v) headerParts.push(`${h}=${v}`);
+  }
+  let bodySnippet = '';
+  try {
+    const text = await res.text();
+    bodySnippet = text.replace(/\s+/g, ' ').trim().slice(0, 200);
+  } catch {
+    // best-effort only
+  }
+  const parts = [`status=${res.status}`];
+  if (headerParts.length) parts.push(headerParts.join(' '));
+  if (bodySnippet) parts.push(`body="${bodySnippet}"`);
+  return parts.join(' | ');
+}
+
 async function fetchWithJar(jar: CookieJar, url: string, init: RequestInit = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -55,6 +98,7 @@ async function fetchWithJar(jar: CookieJar, url: string, init: RequestInit = {})
       signal: controller.signal,
       headers: {
         'User-Agent': UA,
+        ...BROWSER_HEADERS,
         Cookie: cookieHeader(jar),
         ...(init.headers || {}),
       },
@@ -69,7 +113,7 @@ async function fetchWithJar(jar: CookieJar, url: string, init: RequestInit = {})
 /** GET the landing page and return the "View my collections" menu link. */
 async function establishSession(jar: CookieJar): Promise<string> {
   const res = await fetchWithJar(jar, `${BASE}/`);
-  if (!res.ok) throw new ScraperError(`Council site landing page request failed (${res.status})`);
+  if (!res.ok) throw new ScraperError(`Council site landing page request failed (${await describeFailure(res)})`);
   const html = await res.text();
   const $ = cheerio.load(html);
   const link = $('a')
@@ -87,7 +131,7 @@ async function establishSession(jar: CookieJar): Promise<string> {
 /** Follow the menu link and return the Property Lookup Form's submit URL. */
 async function getPropertyLookupAction(jar: CookieJar, menuHref: string): Promise<string> {
   const res = await fetchWithJar(jar, menuHref);
-  if (!res.ok) throw new ScraperError(`Council site menu navigation failed (${res.status})`);
+  if (!res.ok) throw new ScraperError(`Council site menu navigation failed (${await describeFailure(res)})`);
   const html = await res.text();
   const $ = cheerio.load(html);
   const action = $('form[data-form-title="Property Lookup Form"]').attr('action');
@@ -117,7 +161,7 @@ async function submitPostcode(
     address_street: '',
   });
   const res = await fetchWithJar(jar, lookupAction, { method: 'POST', body });
-  if (!res.ok) throw new ScraperError(`Postcode lookup failed (${res.status})`);
+  if (!res.ok) throw new ScraperError(`Postcode lookup failed (${await describeFailure(res)})`);
   const html = await res.text();
   const $ = cheerio.load(html);
 
@@ -165,7 +209,7 @@ export async function fetchSchedule(
 
   const scheduleUrl = new URL(match.href, BASE).toString();
   const res = await fetchWithJar(jar, scheduleUrl);
-  if (!res.ok) throw new ScraperError(`Schedule request failed (${res.status})`);
+  if (!res.ok) throw new ScraperError(`Schedule request failed (${await describeFailure(res)})`);
   const html = await res.text();
   const $ = cheerio.load(html);
 
