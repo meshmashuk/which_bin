@@ -24,12 +24,6 @@ const KNOWN_BIN_TYPES: Record<string, BinType> = {
     color: '#16a34a',
     textColor: '#ffffff',
   },
-  'Domestic Garden Waste Service': {
-    key: 'garden',
-    label: 'Garden Waste',
-    color: '#a16207',
-    textColor: '#ffffff',
-  },
 };
 
 const FALLBACK_COLOR: BinType = {

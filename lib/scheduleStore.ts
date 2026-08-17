@@ -4,15 +4,13 @@ import type { CollectionEvent } from './councilScraper';
 
 export interface StoredSchedule {
   postcode: string;
-  pIndex: string;
-  addressLabel: string;
   events: CollectionEvent[];
   fetchedAt: string; // ISO datetime
 }
 
-function keyFor(postcode: string, pIndex: string): string {
+function keyFor(postcode: string): string {
   const slug = postcode.trim().toUpperCase().replace(/\s+/g, '');
-  return `schedules/${slug}-${pIndex}.json`;
+  return `schedules/${slug}.json`;
 }
 
 const USE_BLOB = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
@@ -32,8 +30,8 @@ async function writeLocal(key: string, data: StoredSchedule): Promise<void> {
   await writeFile(path.join(LOCAL_DIR, key.replace('/', '_')), JSON.stringify(data, null, 2), 'utf8');
 }
 
-export async function readCachedSchedule(postcode: string, pIndex: string): Promise<StoredSchedule | null> {
-  const key = keyFor(postcode, pIndex);
+export async function readCachedSchedule(postcode: string): Promise<StoredSchedule | null> {
+  const key = keyFor(postcode);
   if (!USE_BLOB) return readLocal(key);
 
   const { list } = await import('@vercel/blob');
@@ -45,7 +43,7 @@ export async function readCachedSchedule(postcode: string, pIndex: string): Prom
 }
 
 export async function writeCachedSchedule(data: StoredSchedule): Promise<void> {
-  const key = keyFor(data.postcode, data.pIndex);
+  const key = keyFor(data.postcode);
   if (!USE_BLOB) {
     await writeLocal(key, data);
     return;

@@ -1,31 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchSchedule, ScraperError } from '@/lib/councilScraper';
+import { fetchScheduleForPostcode, ScraperError } from '@/lib/councilScraper';
 import { readCachedSchedule, writeCachedSchedule, type StoredSchedule } from '@/lib/scheduleStore';
 
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
   const postcode = req.nextUrl.searchParams.get('postcode')?.trim();
-  const pIndex = req.nextUrl.searchParams.get('pIndex')?.trim();
   const force = req.nextUrl.searchParams.get('force') === '1';
 
-  if (!postcode || !pIndex) {
-    return NextResponse.json({ error: 'postcode and pIndex are required' }, { status: 400 });
+  if (!postcode) {
+    return NextResponse.json({ error: 'postcode is required' }, { status: 400 });
   }
 
   if (!force) {
-    const cached = await readCachedSchedule(postcode, pIndex);
+    const cached = await readCachedSchedule(postcode);
     if (cached) {
       return NextResponse.json({ ...cached, cached: true });
     }
   }
 
   try {
-    const { addressLabel, events } = await fetchSchedule(postcode, pIndex);
+    const { events } = await fetchScheduleForPostcode(postcode);
     const data: StoredSchedule = {
       postcode,
-      pIndex,
-      addressLabel,
       events,
       fetchedAt: new Date().toISOString(),
     };

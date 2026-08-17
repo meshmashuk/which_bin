@@ -31,12 +31,12 @@ export function ScheduleView({
   schedule,
   refreshing,
   onRefresh,
-  onChangeAddress,
+  onChangePostcode,
 }: {
   schedule: ScheduleData;
   refreshing: boolean;
   onRefresh: () => void;
-  onChangeAddress: () => void;
+  onChangePostcode: () => void;
 }) {
   const grouped = groupByDate(schedule.events);
   const next = grouped[0];
@@ -46,7 +46,7 @@ export function ScheduleView({
     <div className="w-full max-w-2xl mx-auto">
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <p className="text-sm text-zinc-500">{schedule.addressLabel}</p>
+          <p className="text-sm text-zinc-500">{schedule.postcode}</p>
           <p className="text-xs text-zinc-400 mt-0.5">
             Updated {formatFetchedAt(schedule.fetchedAt)}
             {schedule.cached ? ' (cached)' : ''}
@@ -61,10 +61,10 @@ export function ScheduleView({
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
           <button
-            onClick={onChangeAddress}
+            onClick={onChangePostcode}
             className="rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm font-medium"
           >
-            Change address
+            Change postcode
           </button>
         </div>
       </div>

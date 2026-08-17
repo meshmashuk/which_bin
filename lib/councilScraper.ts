@@ -189,25 +189,30 @@ export async function findAddresses(postcode: string): Promise<AddressOption[]> 
   return addresses.map(({ pIndex, label }) => ({ pIndex, label }));
 }
 
-/** Fetch the full collection schedule for a specific address. */
-export async function fetchSchedule(
-  postcode: string,
-  pIndex: string,
-): Promise<{ addressLabel: string; events: CollectionEvent[] }> {
+// General waste, recycling, and food collection days are the same for every address
+// sharing a postcode (a fixed area-wide round) — verified by comparing multiple real
+// addresses at the same postcode. Garden waste is excluded: it's an opt-in paid
+// subscription, so it varies by household even within one postcode, and a single
+// "representative" address can't reliably speak for everyone else's subscription.
+const EXCLUDED_SERVICES = ['Domestic Garden Waste Service'];
+
+/**
+ * Fetch the collection schedule for a postcode, using any one address registered
+ * there as a representative (collection days don't vary by address within a postcode
+ * for the services this returns).
+ */
+export async function fetchScheduleForPostcode(postcode: string): Promise<{ events: CollectionEvent[] }> {
   const jar = newJar();
   const menuHref = await establishSession(jar);
   const lookupAction = await getPropertyLookupAction(jar, menuHref);
   const addresses = await submitPostcode(jar, lookupAction, postcode);
 
-  const match = addresses.find((a) => a.pIndex === pIndex);
-  if (!match) {
-    const known = addresses.map((a) => a.label).join(', ');
-    throw new ScraperError(
-      `Selected address (pIndex ${pIndex}) was not found for postcode ${postcode}. Known addresses: ${known || 'none'}`,
-    );
+  if (addresses.length === 0) {
+    throw new ScraperError('No addresses found for that postcode. Double-check it is a valid Mid Sussex postcode.');
   }
+  const representative = addresses[0];
 
-  const scheduleUrl = new URL(match.href, BASE).toString();
+  const scheduleUrl = new URL(representative.href, BASE).toString();
   const res = await fetchWithJar(jar, scheduleUrl);
   if (!res.ok) throw new ScraperError(`Schedule request failed (${await describeFailure(res)})`);
   const html = await res.text();
@@ -222,6 +227,7 @@ export async function fetchSchedule(
       .filter(Boolean);
     if (texts.length < 2) return;
     const [dateStr, service] = texts;
+    if (EXCLUDED_SERVICES.includes(service)) return;
     const m = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (!m) return;
     const [, dd, mm, yyyy] = m;
@@ -230,10 +236,10 @@ export async function fetchSchedule(
 
   if (events.length === 0) {
     throw new ScraperError(
-      'No collection dates were found for this address — the council page layout may have changed.',
+      'No collection dates were found for this postcode — the council page layout may have changed.',
     );
   }
 
   events.sort((a, b) => a.date.localeCompare(b.date));
-  return { addressLabel: match.label, events };
+  return { events };
 }

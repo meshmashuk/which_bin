@@ -1,34 +1,35 @@
 // Run from a normal home/office network — the council's site blocks requests
 // from cloud/datacenter IPs (including Vercel's), so this can't run as part
-// of the deployed app. See app/api/addresses and app/api/schedule for why.
+// of the deployed app. See app/api/schedule for why.
 //
 // Usage:
-//   npm run refresh -- "<postcode>"                       list addresses at a postcode
-//   npm run refresh -- "<postcode>" "<address fragment>"  fetch + cache one address's schedule
-//   npm run refresh -- --batch <file>                     load many addresses from a list file
-//                                                          (see scripts/neighbours.example.txt)
+//   npm run refresh -- "<postcode>"       fetch + cache one postcode's schedule
+//   npm run refresh -- --batch <file>     load many postcodes from a list file
+//                                         (see scripts/neighbours.example.txt)
 //
 // Requires BLOB_READ_WRITE_TOKEN in .env.local (from the Vercel dashboard's
 // Storage tab) so results are written to the same Blob store the deployed
 // app reads from. Without it, results only land in the local .data/ cache.
+//
+// Collection days are the same for every address sharing a postcode (a fixed
+// area-wide round, verified against real data), so one postcode = one entry —
+// no need to track individual addresses. Garden waste is deliberately
+// excluded (see lib/councilScraper.ts): it's an opt-in subscription that can
+// vary by household, so it can't be reliably represented at postcode level.
 //
 // BN6 postcodes are checked against scripts/hassocks-postcodes.json (a
 // best-effort reference list of the ~272 postcodes in Hassocks/Clayton
 // parish, out of ~622 total in BN6 — the rest are Ditchling, Hurstpierpoint,
 // Albourne, etc.) and flagged with a warning if not found — this is a
 // same-outward-code area, not a hard boundary check, so it only warns.
-// This is intentionally demand-driven: addresses are added one at a time
-// as neighbours actually ask, not preloaded in bulk, since fully scraping
-// the whole area would mean many hours of sustained requests against a
-// small council server that's already shown it watches for bot traffic.
+//
+// Note: the council site enforces a per-device daily rate limit ("Too Many
+// Requests... try again tomorrow" on a 429). Keep batches modest.
 
 import { readFile } from 'fs/promises';
-import { findAddresses, fetchSchedule, type AddressOption } from '../lib/councilScraper';
+import { fetchScheduleForPostcode, ScraperError } from '../lib/councilScraper';
 import { writeCachedSchedule, type StoredSchedule } from '../lib/scheduleStore';
-import { upsertAddress } from '../lib/addressDirectory';
 import hassocksPostcodes from './hassocks-postcodes.json' with { type: 'json' };
-
-type Result = { ok: true; label: string; nextDate?: string } | { ok: false; reason: string };
 
 const HASSOCKS_SET = new Set(hassocksPostcodes.map(normalizePostcode));
 
@@ -51,79 +52,46 @@ function warnIfOutsideKnownArea(postcode: string) {
   }
 }
 
-function matchAddress(addresses: AddressOption[], fragment: string): AddressOption[] | AddressOption {
-  const frag = fragment.toLowerCase();
-  const matches = addresses.filter((a) => a.label.toLowerCase().startsWith(frag));
-  if (matches.length === 1) return matches[0];
-  return matches;
-}
-
-async function refreshOne(postcode: string, matchFragment: string): Promise<Result> {
-  const addresses = await findAddresses(postcode);
-  const matched = matchAddress(addresses, matchFragment);
-
-  if (Array.isArray(matched)) {
-    if (matched.length === 0) {
-      return { ok: false, reason: `no address matched "${matchFragment}" at ${postcode}` };
-    }
-    return {
-      ok: false,
-      reason: `"${matchFragment}" at ${postcode} is ambiguous: ${matched.map((a) => a.label).join(' / ')}`,
-    };
-  }
-
-  const { addressLabel, events } = await fetchSchedule(postcode, matched.pIndex);
+async function refreshOne(postcode: string): Promise<{ nextDate?: string }> {
+  const { events } = await fetchScheduleForPostcode(postcode);
 
   const data: StoredSchedule = {
     postcode: postcode.trim(),
-    pIndex: matched.pIndex,
-    addressLabel,
     events,
     fetchedAt: new Date().toISOString(),
   };
   await writeCachedSchedule(data);
-  await upsertAddress({ postcode: postcode.trim(), pIndex: matched.pIndex, label: addressLabel });
 
-  return { ok: true, label: addressLabel, nextDate: events[0]?.date };
+  return { nextDate: events[0]?.date };
 }
 
 async function runBatch(filePath: string) {
   const raw = await readFile(filePath, 'utf8');
-  const lines = raw
+  const postcodes = raw
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith('#'));
 
-  console.log(`Loading ${lines.length} address(es) from ${filePath}...\n`);
+  console.log(`Loading ${postcodes.length} postcode(s) from ${filePath}...\n`);
 
-  const succeeded: string[] = [];
+  let succeeded = 0;
   const failed: string[] = [];
 
-  for (const line of lines) {
-    const [postcode, fragment] = line.split('|').map((s) => s.trim());
-    if (!postcode || !fragment) {
-      failed.push(`"${line}" — expected format: postcode | address fragment`);
-      continue;
-    }
+  for (const postcode of postcodes) {
     warnIfOutsideKnownArea(postcode);
-    process.stdout.write(`${postcode} | ${fragment} ... `);
+    process.stdout.write(`${postcode} ... `);
     try {
-      const result = await refreshOne(postcode, fragment);
-      if (result.ok) {
-        console.log(`OK (${result.label}, next: ${result.nextDate ?? 'n/a'})`);
-        succeeded.push(result.label);
-      } else {
-        console.log(`SKIPPED (${result.reason})`);
-        failed.push(`${postcode} | ${fragment} — ${result.reason}`);
-      }
+      const { nextDate } = await refreshOne(postcode);
+      console.log(`OK (next: ${nextDate ?? 'n/a'})`);
+      succeeded++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.log(`FAILED (${message})`);
-      failed.push(`${postcode} | ${fragment} — ${message}`);
+      failed.push(`${postcode} — ${message}`);
     }
   }
 
-  console.log(`\n${succeeded.length} loaded, ${failed.length} skipped/failed.`);
+  console.log(`\n${succeeded} loaded, ${failed.length} failed.`);
   if (failed.length > 0) {
     console.log('\nNeeds attention:');
     for (const f of failed) console.log(`  ${f}`);
@@ -149,33 +117,26 @@ async function main() {
     return;
   }
 
-  const [postcode, matchFragment] = args;
+  const [postcode] = args;
   if (!postcode) {
-    console.error('Usage: npm run refresh -- "<postcode>" ["address fragment"]');
+    console.error('Usage: npm run refresh -- "<postcode>"');
     console.error('   or: npm run refresh -- --batch <file>');
     process.exit(1);
   }
 
   warnIfOutsideKnownArea(postcode);
-  console.log(`Looking up addresses for ${postcode}...`);
-  const addresses = await findAddresses(postcode);
-
-  if (!matchFragment) {
-    console.log(`Found ${addresses.length} address(es). Re-run with a fragment of the one you want, e.g.:\n`);
-    for (const a of addresses.slice(0, 40)) {
-      console.log(`  ${a.label}`);
+  console.log(`Fetching schedule for ${postcode}...`);
+  try {
+    const { nextDate } = await refreshOne(postcode);
+    console.log(`\nSaved schedule for ${postcode}.`);
+    if (nextDate) console.log(`Next collection: ${nextDate}`);
+  } catch (err) {
+    if (err instanceof ScraperError) {
+      console.error(err.message);
+      process.exit(1);
     }
-    if (addresses.length > 40) console.log(`  ...and ${addresses.length - 40} more`);
-    return;
+    throw err;
   }
-
-  const result = await refreshOne(postcode, matchFragment);
-  if (!result.ok) {
-    console.error(result.reason);
-    process.exit(1);
-  }
-  console.log(`\nSaved schedule for ${result.label}.`);
-  if (result.nextDate) console.log(`Next collection: ${result.nextDate}`);
 }
 
 main().catch((err) => {

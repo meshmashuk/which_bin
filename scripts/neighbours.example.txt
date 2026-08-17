@@ -1,10 +1,11 @@
-# One address per line: postcode | address fragment (enough to uniquely match)
-# Lines starting with # are ignored.
+# One postcode per line. Lines starting with # are ignored.
+#
+# Collection days are the same for every address sharing a postcode (a
+# fixed area-wide round), so one postcode covers everyone registered there.
 #
 # Copy this file to scripts/neighbours.txt (gitignored) and fill in real
-# addresses, then run:
+# postcodes, then run:
 #   npm run refresh -- --batch scripts/neighbours.txt
 
-RH16 4AR | 2, Cape Road
-RH16 4AR | 4, Cape Road
-RH17 6DN | 10, High Street
+BN6 8JZ
+BN6 8JY

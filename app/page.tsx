@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AddressSearch } from '@/components/AddressSearch';
+import { PostcodeSearch } from '@/components/PostcodeSearch';
 import { ScheduleView } from '@/components/ScheduleView';
-import type { SavedAddress, ScheduleData } from '@/lib/types';
+import type { ScheduleData } from '@/lib/types';
 
-const STORAGE_KEY = 'whichbin.address';
+const STORAGE_KEY = 'whichbin.postcode';
 
 export default function Home() {
-  const [address, setAddress] = useState<SavedAddress | null>(null);
+  const [postcode, setPostcode] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -18,24 +18,20 @@ export default function Home() {
   useEffect(() => {
     // Reading localStorage must happen after mount to avoid an SSR/client hydration mismatch,
     // so setting state here (rather than during render) is unavoidable.
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setAddress(JSON.parse(raw));
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-      }
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPostcode(saved);
     }
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (!hydrated || !address) return;
-    loadSchedule(address, false);
-  }, [hydrated, address]);
+    if (!hydrated || !postcode) return;
+    loadSchedule(postcode, false);
+  }, [hydrated, postcode]);
 
-  async function loadSchedule(addr: SavedAddress, force: boolean) {
+  async function loadSchedule(pc: string, force: boolean) {
     if (force) {
       setRefreshing(true);
     } else {
@@ -43,7 +39,7 @@ export default function Home() {
     }
     setError(null);
     try {
-      const params = new URLSearchParams({ postcode: addr.postcode, pIndex: addr.pIndex });
+      const params = new URLSearchParams({ postcode: pc });
       if (force) params.set('force', '1');
       const res = await fetch(`/api/schedule?${params}`);
       const data = await res.json();
@@ -57,15 +53,15 @@ export default function Home() {
     }
   }
 
-  function handleSelect(addr: SavedAddress) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(addr));
-    setAddress(addr);
+  function handleSearch(pc: string) {
+    localStorage.setItem(STORAGE_KEY, pc);
+    setPostcode(pc);
     setSchedule(null);
   }
 
-  function handleChangeAddress() {
+  function handleChangePostcode() {
     localStorage.removeItem(STORAGE_KEY);
-    setAddress(null);
+    setPostcode(null);
     setSchedule(null);
     setError(null);
   }
@@ -75,25 +71,25 @@ export default function Home() {
       <h1 className="text-2xl font-semibold mb-1">Which Bin?</h1>
       <p className="text-sm text-zinc-500 mb-8">Mid Sussex bin collection calendar</p>
 
-      {!hydrated ? null : !address ? (
-        <AddressSearch onSelect={handleSelect} />
+      {!hydrated ? null : !postcode ? (
+        <PostcodeSearch onSubmit={handleSearch} />
       ) : loading ? (
         <p className="text-sm text-zinc-500">Loading schedule…</p>
       ) : schedule ? (
         <ScheduleView
           schedule={schedule}
           refreshing={refreshing}
-          onRefresh={() => loadSchedule(address, true)}
-          onChangeAddress={handleChangeAddress}
+          onRefresh={() => loadSchedule(postcode, true)}
+          onChangePostcode={handleChangePostcode}
         />
       ) : error ? (
         <div className="text-center">
           <p className="text-sm text-red-600 dark:text-red-400 mb-4">{error}</p>
           <button
-            onClick={handleChangeAddress}
+            onClick={handleChangePostcode}
             className="rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm font-medium"
           >
-            Try a different address
+            Try a different postcode
           </button>
         </div>
       ) : null}
