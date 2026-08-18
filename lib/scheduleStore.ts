@@ -34,12 +34,11 @@ export async function readCachedSchedule(postcode: string): Promise<StoredSchedu
   const key = keyFor(postcode);
   if (!USE_BLOB) return readLocal(key);
 
-  const { list } = await import('@vercel/blob');
-  const { blobs } = await list({ prefix: key, limit: 1 });
-  if (blobs.length === 0) return null;
-  const res = await fetch(blobs[0].url, { cache: 'no-store' });
-  if (!res.ok) return null;
-  return (await res.json()) as StoredSchedule;
+  const { get } = await import('@vercel/blob');
+  const result = await get(key, { access: 'private' }).catch(() => null);
+  if (!result?.stream) return null;
+  const text = await new Response(result.stream).text();
+  return JSON.parse(text) as StoredSchedule;
 }
 
 export async function writeCachedSchedule(data: StoredSchedule): Promise<void> {
@@ -51,7 +50,7 @@ export async function writeCachedSchedule(data: StoredSchedule): Promise<void> {
 
   const { put } = await import('@vercel/blob');
   await put(key, JSON.stringify(data), {
-    access: 'public',
+    access: 'private',
     contentType: 'application/json',
     addRandomSuffix: false,
     allowOverwrite: true,
