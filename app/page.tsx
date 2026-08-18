@@ -1,16 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { PostcodeSearch } from '@/components/PostcodeSearch';
+import { AreaSelector } from '@/components/AreaSelector';
 import { ScheduleView } from '@/components/ScheduleView';
+import { AREAS } from '@/lib/areas';
 import type { ScheduleData } from '@/lib/types';
 
 const STORAGE_KEY = 'whichbin.postcode';
 
 export default function Home() {
-  const [postcode, setPostcode] = useState<string | null>(null);
+  const [postcode, setPostcode] = useState(AREAS[0].postcode);
   const [schedule, setSchedule] = useState<ScheduleData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -19,7 +20,7 @@ export default function Home() {
     // Reading localStorage must happen after mount to avoid an SSR/client hydration mismatch,
     // so setting state here (rather than during render) is unavoidable.
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    if (saved && AREAS.some((a) => a.postcode === saved)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPostcode(saved);
     }
@@ -27,7 +28,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!hydrated || !postcode) return;
+    if (!hydrated) return;
     loadSchedule(postcode, false);
   }, [hydrated, postcode]);
 
@@ -53,45 +54,32 @@ export default function Home() {
     }
   }
 
-  function handleSearch(pc: string) {
+  function handleAreaChange(pc: string) {
     localStorage.setItem(STORAGE_KEY, pc);
     setPostcode(pc);
     setSchedule(null);
   }
 
-  function handleChangePostcode() {
-    localStorage.removeItem(STORAGE_KEY);
-    setPostcode(null);
-    setSchedule(null);
-    setError(null);
-  }
-
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black flex flex-col items-center px-4 py-12">
-      <h1 className="text-2xl font-semibold mb-1">Which Bin?</h1>
-      <p className="text-sm text-zinc-500 mb-8">Mid Sussex bin collection calendar</p>
+    <div className="min-h-screen bg-zinc-50 dark:bg-black flex flex-col items-center px-4 py-12 gap-8">
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold mb-1">Which Bin?</h1>
+        <p className="text-sm text-zinc-500">Mid Sussex bin collection calendar</p>
+      </div>
 
-      {!hydrated ? null : !postcode ? (
-        <PostcodeSearch onSubmit={handleSearch} />
-      ) : loading ? (
+      <AreaSelector
+        selectedPostcode={postcode}
+        onChange={handleAreaChange}
+        onRefresh={() => loadSchedule(postcode, true)}
+        refreshing={refreshing}
+      />
+
+      {!hydrated || loading ? (
         <p className="text-sm text-zinc-500">Loading schedule…</p>
       ) : schedule ? (
-        <ScheduleView
-          schedule={schedule}
-          refreshing={refreshing}
-          onRefresh={() => loadSchedule(postcode, true)}
-          onChangePostcode={handleChangePostcode}
-        />
+        <ScheduleView schedule={schedule} />
       ) : error ? (
-        <div className="text-center">
-          <p className="text-sm text-red-600 dark:text-red-400 mb-4">{error}</p>
-          <button
-            onClick={handleChangePostcode}
-            className="rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm font-medium"
-          >
-            Try a different postcode
-          </button>
-        </div>
+        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
       ) : null}
     </div>
   );

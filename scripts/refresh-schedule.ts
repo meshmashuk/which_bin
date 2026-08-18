@@ -3,19 +3,20 @@
 // of the deployed app. See app/api/schedule for why.
 //
 // Usage:
-//   npm run refresh -- "<postcode>"       fetch + cache one postcode's schedule
-//   npm run refresh -- --batch <file>     load many postcodes from a list file
-//                                         (see scripts/neighbours.example.txt)
+//   npm run refresh                    refresh every area in lib/areas.ts
+//   npm run refresh -- "<postcode>"    one-off refresh of an arbitrary postcode
+//                                      (useful for trying a new area before
+//                                      adding it to lib/areas.ts)
 //
 // Requires BLOB_READ_WRITE_TOKEN in .env.local (from the Vercel dashboard's
 // Storage tab) so results are written to the same Blob store the deployed
 // app reads from. Without it, results only land in the local .data/ cache.
 //
 // Collection days are the same for every address sharing a postcode (a fixed
-// area-wide round, verified against real data), so one postcode = one entry —
-// no need to track individual addresses. Garden waste is deliberately
-// excluded (see lib/councilScraper.ts): it's an opt-in subscription that can
-// vary by household, so it can't be reliably represented at postcode level.
+// area-wide round, verified against real data), so one postcode = one area.
+// Garden waste is deliberately excluded (see lib/councilScraper.ts): it's an
+// opt-in subscription that can vary by household, so it can't be reliably
+// represented at postcode level.
 //
 // BN6 postcodes are checked against scripts/hassocks-postcodes.json (a
 // best-effort reference list of the ~272 postcodes in Hassocks/Clayton
@@ -26,9 +27,9 @@
 // Note: the council site enforces a per-device daily rate limit ("Too Many
 // Requests... try again tomorrow" on a 429). Keep batches modest.
 
-import { readFile } from 'fs/promises';
 import { fetchScheduleForPostcode, ScraperError } from '../lib/councilScraper';
 import { writeCachedSchedule, type StoredSchedule } from '../lib/scheduleStore';
+import { AREAS } from '../lib/areas';
 import hassocksPostcodes from './hassocks-postcodes.json' with { type: 'json' };
 
 const HASSOCKS_SET = new Set(hassocksPostcodes.map(normalizePostcode));
@@ -65,29 +66,23 @@ async function refreshOne(postcode: string): Promise<{ nextDate?: string }> {
   return { nextDate: events[0]?.date };
 }
 
-async function runBatch(filePath: string) {
-  const raw = await readFile(filePath, 'utf8');
-  const postcodes = raw
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith('#'));
-
-  console.log(`Loading ${postcodes.length} postcode(s) from ${filePath}...\n`);
+async function runAll() {
+  console.log(`Refreshing ${AREAS.length} area(s) from lib/areas.ts...\n`);
 
   let succeeded = 0;
   const failed: string[] = [];
 
-  for (const postcode of postcodes) {
-    warnIfOutsideKnownArea(postcode);
-    process.stdout.write(`${postcode} ... `);
+  for (const area of AREAS) {
+    warnIfOutsideKnownArea(area.postcode);
+    process.stdout.write(`${area.label} (${area.postcode}) ... `);
     try {
-      const { nextDate } = await refreshOne(postcode);
+      const { nextDate } = await refreshOne(area.postcode);
       console.log(`OK (next: ${nextDate ?? 'n/a'})`);
       succeeded++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.log(`FAILED (${message})`);
-      failed.push(`${postcode} — ${message}`);
+      failed.push(`${area.label} (${area.postcode}) — ${message}`);
     }
   }
 
@@ -107,25 +102,14 @@ async function main() {
     );
   }
 
-  if (args[0] === '--batch') {
-    const filePath = args[1];
-    if (!filePath) {
-      console.error('Usage: npm run refresh -- --batch <file>');
-      process.exit(1);
-    }
-    await runBatch(filePath);
+  if (args.length === 0) {
+    await runAll();
     return;
   }
 
   const [postcode] = args;
-  if (!postcode) {
-    console.error('Usage: npm run refresh -- "<postcode>"');
-    console.error('   or: npm run refresh -- --batch <file>');
-    process.exit(1);
-  }
-
   warnIfOutsideKnownArea(postcode);
-  console.log(`Fetching schedule for ${postcode}...`);
+  console.log(`Fetching schedule for ${postcode} (ad-hoc — not in lib/areas.ts)...`);
   try {
     const { nextDate } = await refreshOne(postcode);
     console.log(`\nSaved schedule for ${postcode}.`);

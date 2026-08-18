@@ -39,9 +39,6 @@ yarn-error.log*
 # local dev cache (schedule data, used when Vercel Blob isn't configured)
 .data/
 
-# real neighbour addresses for scripts/refresh-schedule.ts --batch (personal data, don't commit)
-scripts/neighbours.txt
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts

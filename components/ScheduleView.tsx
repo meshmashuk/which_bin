@@ -27,47 +27,17 @@ function BinPill({ service }: { service: string }) {
   );
 }
 
-export function ScheduleView({
-  schedule,
-  refreshing,
-  onRefresh,
-  onChangePostcode,
-}: {
-  schedule: ScheduleData;
-  refreshing: boolean;
-  onRefresh: () => void;
-  onChangePostcode: () => void;
-}) {
+export function ScheduleView({ schedule }: { schedule: ScheduleData }) {
   const grouped = groupByDate(schedule.events);
   const next = grouped[0];
   const rest = grouped.slice(1);
 
   return (
     <div className="w-full max-w-2xl mx-auto">
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <p className="text-sm text-zinc-500">{schedule.postcode}</p>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            Updated {formatFetchedAt(schedule.fetchedAt)}
-            {schedule.cached ? ' (cached)' : ''}
-          </p>
-        </div>
-        <div className="flex gap-2 shrink-0">
-          <button
-            onClick={onRefresh}
-            disabled={refreshing}
-            className="rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
-          >
-            {refreshing ? 'Refreshing…' : 'Refresh'}
-          </button>
-          <button
-            onClick={onChangePostcode}
-            className="rounded-lg border border-zinc-300 dark:border-zinc-700 px-3 py-1.5 text-sm font-medium"
-          >
-            Change postcode
-          </button>
-        </div>
-      </div>
+      <p className="text-xs text-zinc-400 text-right mb-4">
+        Updated {formatFetchedAt(schedule.fetchedAt)}
+        {schedule.cached ? ' (cached)' : ''}
+      </p>
 
       {next && (
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-6 mb-6">
